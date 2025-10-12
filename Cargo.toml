@@ -1,0 +1,11 @@
+[package]
+name = "soop"
+version = "0.1.0"
+edition = "2024"
+authors = ["Jun Park <pj2417@gmail.com>"]
+description = "SSH cOnfig OPerator"
+license = "MIT"
+repository = "https://github.com/currybab/soop"
+
+[dependencies]
+clap = { version = "4.5.48", features = ["derive"] }

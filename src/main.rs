@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use dialoguer::{Input, Select};
+use dialoguer::{Confirm, Input, Select};
 use regex::Regex;
 use std::collections::HashMap;
 use std::fs;
@@ -20,16 +20,18 @@ enum Commands {
     /// List SSH hosts
     Ls,
     /// Connect to SSH host
+    #[command(visible_alias = "c")]
+    #[command(visible_alias = "ssh")]
     Connect {
         #[arg(value_name = "HOST")]
         host: Option<String>,
     },
-    /// Edit SSH host @TODO
+    /// Edit SSH host
     Edit {
         #[arg(value_name = "HOST")]
         host: Option<String>,
     },
-    /// Remove SSH host @TODO
+    /// Remove SSH host
     #[command(visible_alias = "rm")]
     Remove {
         #[arg(value_name = "HOST")]
@@ -140,6 +142,31 @@ fn input_ssh_config_to_add() -> SshConfigToAdd {
     }
 }
 
+fn ssh_host_to_config_string(host: &SshHost) -> String {
+    let mut config = format!("Host {}\n", host.host);
+
+    if let Some(hostname) = &host.hostname {
+        config.push_str(&format!("    HostName {}\n", hostname));
+    }
+    if let Some(user) = &host.user {
+        config.push_str(&format!("    User {}\n", user));
+    }
+    if let Some(port) = host.port {
+        config.push_str(&format!("    Port {}\n", port));
+    }
+    if let Some(identity_file) = &host.identity_file {
+        config.push_str(&format!("    IdentityFile {}\n", identity_file));
+    }
+
+    // Add other options
+    for (key, value) in &host.other_options {
+        config.push_str(&format!("    {} {}\n", key, value));
+    }
+
+    config.push('\n');
+    config
+}
+
 fn create_ssh_config_string_to_add(
     name: &str,
     address: &str,
@@ -147,18 +174,24 @@ fn create_ssh_config_string_to_add(
     user: &str,
     identity_file: &str,
 ) -> String {
-    let mut entry = format!(
-        "Host {}\n    HostName {}\n    Port {}\n",
-        name, address, port
-    );
-    if !user.is_empty() {
-        entry.push_str(&format!("    User {}\n", user));
-    }
-    if !identity_file.is_empty() {
-        entry.push_str(&format!("    IdentityFile {}\n", identity_file));
-    }
-    entry.push('\n');
-    entry
+    let host = SshHost {
+        host: name.to_string(),
+        hostname: Some(address.to_string()),
+        port: Some(port),
+        user: if !user.is_empty() {
+            Some(user.to_string())
+        } else {
+            None
+        },
+        identity_file: if !identity_file.is_empty() {
+            Some(identity_file.to_string())
+        } else {
+            None
+        },
+        other_options: HashMap::new(),
+    };
+
+    ssh_host_to_config_string(&host)
 }
 
 fn add_ssh_config_entry(path: &str, entry: &str) {
@@ -176,6 +209,19 @@ fn select_from_list(items: Vec<&str>) -> Option<usize> {
         .items(&items)
         .interact_opt()
         .unwrap()
+}
+
+fn remove_ssh_host(path: &str, hosts: &[SshHost], index_to_remove: usize) -> std::io::Result<()> {
+    let mut new_config = String::new();
+
+    for (i, host) in hosts.iter().enumerate() {
+        if i != index_to_remove {
+            new_config.push_str(&ssh_host_to_config_string(host));
+        }
+    }
+
+    fs::write(path, new_config)?;
+    Ok(())
 }
 
 fn main() {
@@ -208,8 +254,16 @@ fn main() {
             return;
         }
         let host_names: Vec<&str> = hosts.iter().map(|h| h.host.as_str()).collect();
+
+        // Ls command just prints the list
+        if cli.command == Commands::Ls {
+            for host in &host_names {
+                println!("{}", host);
+            }
+            return;
+        }
+
         let selection: Option<usize> = match &cli.command {
-            Commands::Ls => select_from_list(host_names),
             Commands::Connect { host } | Commands::Edit { host } | Commands::Remove { host } => {
                 if let Some(host) = host {
                     host_names.iter().position(|&h| h == host)
@@ -241,7 +295,24 @@ fn main() {
                     eprintln!("Not implemented yet!");
                 }
                 Commands::Remove { .. } => {
-                    eprintln!("Not implemented yet!");
+                    let confirmed = Confirm::new()
+                        .with_prompt(format!(
+                            "Are you sure you want to delete '{}'?",
+                            selected_host
+                        ))
+                        .default(false)
+                        .interact()
+                        .unwrap();
+
+                    if confirmed {
+                        if let Err(e) = remove_ssh_host(&ssh_config_path, &hosts, index) {
+                            eprintln!("Failed to remove host: {}", e);
+                        } else {
+                            println!("Removed host '{}' from {}", selected_host, ssh_config_path);
+                        }
+                    } else {
+                        println!("Cancelled");
+                    }
                 }
                 _ => {
                     eprintln!("Invalid command");

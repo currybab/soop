@@ -20,6 +20,12 @@ The name "soop" comes from the Korean word "숲" (forest). Just as trees grow an
 
 ## Installation
 
+### From crates.io
+
+```bash
+cargo install soop
+```
+
 ### From Source
 
 ```bash

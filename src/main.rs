@@ -305,6 +305,13 @@ fn edit_ssh_host(
     // Read edited content
     let edited_content = fs::read_to_string(&temp_file_path)?;
 
+    // Check if there are any changes
+    if edited_content.trim() == host_config.trim() {
+        println!("No changes made");
+        fs::remove_file(&temp_file_path)?;
+        return Ok(());
+    }
+
     // Parse edited host
     let edited_hosts = split_by_host(&edited_content);
 

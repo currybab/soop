@@ -121,11 +121,27 @@ struct SshConfigToAdd {
     identity_file: String,
 }
 
-fn input_ssh_config_to_add() -> SshConfigToAdd {
-    let name = Input::<String>::new()
-        .with_prompt("Enter host name")
-        .interact_text()
-        .unwrap();
+fn input_ssh_config_to_add(existing_hosts: &[SshHost]) -> SshConfigToAdd {
+    // Loop until we get a non-duplicate name
+    let name = loop {
+        let input_name = Input::<String>::new()
+            .with_prompt("Enter host name")
+            .interact_text()
+            .unwrap();
+
+        // Check for duplicates
+        let is_duplicate = existing_hosts.iter().any(|h| h.host == input_name);
+
+        if is_duplicate {
+            eprintln!(
+                "Error: Host '{}' already exists. Please enter a different name.",
+                input_name
+            );
+        } else {
+            break input_name;
+        }
+    };
+
     let address = Input::<String>::new()
         .with_prompt("Enter host address")
         .interact_text()
@@ -344,94 +360,123 @@ fn main() {
 
     let cli = Cli::parse();
 
-    if cli.command == Commands::Add {
-        let ssh_config_to_add = input_ssh_config_to_add();
+    // Parse existing hosts once (for all commands)
+    let hosts = parse_ssh_config(&ssh_config_path).unwrap_or_else(|_| Vec::new());
 
-        let entry = create_ssh_config_string_to_add(
-            &ssh_config_to_add.name,
-            &ssh_config_to_add.address,
-            ssh_config_to_add.port,
-            &ssh_config_to_add.user,
-            &ssh_config_to_add.identity_file,
-        );
+    match &cli.command {
+        Commands::Add => {
+            let ssh_config_to_add = input_ssh_config_to_add(&hosts);
 
-        add_ssh_config_entry(&ssh_config_path, &entry);
+            let entry = create_ssh_config_string_to_add(
+                &ssh_config_to_add.name,
+                &ssh_config_to_add.address,
+                ssh_config_to_add.port,
+                &ssh_config_to_add.user,
+                &ssh_config_to_add.identity_file,
+            );
 
-        println!(
-            "Added host '{}' to {}",
-            ssh_config_to_add.name, ssh_config_path
-        );
-    } else {
-        let hosts = parse_ssh_config(&ssh_config_path).unwrap();
-        if hosts.is_empty() {
-            println!("No SSH hosts found");
-            return;
+            add_ssh_config_entry(&ssh_config_path, &entry);
+
+            println!(
+                "Added host '{}' to {}",
+                ssh_config_to_add.name, ssh_config_path
+            );
         }
-        let host_names: Vec<&str> = hosts.iter().map(|h| h.host.as_str()).collect();
-
-        // Ls command just prints the list
-        if cli.command == Commands::Ls {
-            for host in &host_names {
-                println!("{}", host);
+        Commands::Ls => {
+            if hosts.is_empty() {
+                eprintln!("No SSH hosts found");
+                return;
             }
-            return;
-        }
 
-        let selection: Option<usize> = match &cli.command {
-            Commands::Connect { host } | Commands::Edit { host } | Commands::Remove { host } => {
-                if let Some(host) = host {
-                    host_names.iter().position(|&h| h == host)
+            for host in &hosts {
+                let mut info = String::new();
+
+                // Add user if present
+                if let Some(user) = &host.user {
+                    info.push_str(user);
+                    info.push('@');
+                }
+
+                // Add hostname if present
+                if let Some(hostname) = &host.hostname {
+                    info.push_str(hostname);
+                }
+
+                // Add port if present and not default (22)
+                if let Some(port) = host.port {
+                    if port != 22 {
+                        info.push(':');
+                        info.push_str(&port.to_string());
+                    }
+                }
+
+                // Print with or without info
+                if info.is_empty() {
+                    println!("{}", host.host);
                 } else {
-                    select_from_list(host_names)
+                    println!("{:<20} {}", host.host, info);
                 }
             }
-            _ => {
-                eprintln!("Invalid command");
-                None
+        }
+        Commands::Connect { host } | Commands::Edit { host } | Commands::Remove { host } => {
+            if hosts.is_empty() {
+                println!("No SSH hosts found");
+                return;
             }
-        };
 
-        if let Some(index) = selection {
-            let selected_host = &hosts[index].host;
-            match &cli.command {
-                Commands::Connect { .. } => {
-                    println!("Connecting to {}", selected_host);
-                    let status = Command::new("ssh")
-                        .arg(selected_host)
-                        .status()
-                        .expect("Failed to execute ssh");
+            let host_names: Vec<&str> = hosts.iter().map(|h| h.host.as_str()).collect();
 
-                    if !status.success() {
-                        eprintln!("SSH connection failed");
-                    }
-                }
-                Commands::Edit { .. } => {
-                    if let Err(e) = edit_ssh_host(&ssh_config_path, &hosts, index) {
-                        eprintln!("Failed to edit host: {}", e);
-                    }
-                }
-                Commands::Remove { .. } => {
-                    let confirmed = Confirm::new()
-                        .with_prompt(format!(
-                            "Are you sure you want to delete '{}'?",
-                            selected_host
-                        ))
-                        .default(false)
-                        .interact()
-                        .unwrap();
+            let selection: Option<usize> = if let Some(host) = host {
+                host_names.iter().position(|&h| h == host)
+            } else {
+                select_from_list(host_names)
+            };
 
-                    if confirmed {
-                        if let Err(e) = remove_ssh_host(&ssh_config_path, &hosts, index) {
-                            eprintln!("Failed to remove host: {}", e);
-                        } else {
-                            println!("Removed host '{}' from {}", selected_host, ssh_config_path);
+            if let Some(index) = selection {
+                let selected_host = &hosts[index].host;
+                match &cli.command {
+                    Commands::Connect { .. } => {
+                        println!("Connecting to {}", selected_host);
+                        let status = Command::new("ssh")
+                            .arg(selected_host)
+                            .status()
+                            .expect("Failed to execute ssh");
+
+                        if !status.success() {
+                            eprintln!("SSH connection failed");
                         }
-                    } else {
-                        println!("Cancelled");
                     }
-                }
-                _ => {
-                    eprintln!("Invalid command");
+                    Commands::Edit { .. } => {
+                        if let Err(e) = edit_ssh_host(&ssh_config_path, &hosts, index) {
+                            eprintln!("Failed to edit host: {}", e);
+                        }
+                    }
+                    Commands::Remove { .. } => {
+                        let confirmed = Confirm::new()
+                            .with_prompt(format!(
+                                "Are you sure you want to delete '{}'?",
+                                selected_host
+                            ))
+                            .default(false)
+                            .interact()
+                            .unwrap();
+
+                        if confirmed {
+                            if let Err(e) = remove_ssh_host(&ssh_config_path, &hosts, index) {
+                                eprintln!("Failed to remove host: {}", e);
+                            } else {
+                                println!(
+                                    "Removed host '{}' from {}",
+                                    selected_host, ssh_config_path
+                                );
+                            }
+                        } else {
+                            println!("Cancelled");
+                        }
+                    }
+                    _ => {
+                        eprintln!("Invalid command");
+                    }
                 }
             }
         }

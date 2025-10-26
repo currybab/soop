@@ -208,7 +208,7 @@ fn main() {
             return;
         }
         let host_names: Vec<&str> = hosts.iter().map(|h| h.host.as_str()).collect();
-        let selection: Option<usize> = match cli.command {
+        let selection: Option<usize> = match &cli.command {
             Commands::Ls => select_from_list(host_names),
             Commands::Connect { host } | Commands::Edit { host } | Commands::Remove { host } => {
                 if let Some(host) = host {
@@ -225,14 +225,27 @@ fn main() {
 
         if let Some(index) = selection {
             let selected_host = &hosts[index].host;
-            println!("Connecting to {}", selected_host);
-            let status = Command::new("ssh")
-                .arg(selected_host)
-                .status()
-                .expect("Failed to execute ssh");
+            match &cli.command {
+                Commands::Connect { .. } => {
+                    println!("Connecting to {}", selected_host);
+                    let status = Command::new("ssh")
+                        .arg(selected_host)
+                        .status()
+                        .expect("Failed to execute ssh");
 
-            if !status.success() {
-                eprintln!("SSH connection failed");
+                    if !status.success() {
+                        eprintln!("SSH connection failed");
+                    }
+                }
+                Commands::Edit { .. } => {
+                    eprintln!("Not implemented yet!");
+                }
+                Commands::Remove { .. } => {
+                    eprintln!("Not implemented yet!");
+                }
+                _ => {
+                    eprintln!("Invalid command");
+                }
             }
         }
     }

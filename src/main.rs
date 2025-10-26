@@ -1,7 +1,6 @@
 use clap::{Parser, Subcommand};
 use dialoguer::{Confirm, Input, Select};
 use regex::Regex;
-use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::process::Command;
@@ -40,13 +39,19 @@ enum Commands {
 }
 
 #[derive(Debug, Clone)]
+enum ConfigLine {
+    Option { key: String, value: String },
+    Comment(String),
+}
+
+#[derive(Debug, Clone)]
 struct SshHost {
     host: String,
     hostname: Option<String>,
     user: Option<String>,
     port: Option<u16>,
     identity_file: Option<String>,
-    other_options: HashMap<String, String>,
+    lines: Vec<ConfigLine>,
 }
 
 fn parse_ssh_config(path: &str) -> Result<Vec<SshHost>, std::io::Error> {
@@ -71,14 +76,24 @@ fn split_by_host(content: &str) -> Vec<SshHost> {
                 user: None,
                 port: None,
                 identity_file: None,
-                other_options: HashMap::new(),
+                lines: Vec::new(),
             });
         } else if !trimmed.is_empty() {
-            if let Some(captured) = key_regex.captures(trimmed) {
-                let key = captured[1].to_string();
-                let value = captured[2].to_string();
+            if let Some(host) = hosts.last_mut() {
+                // Check if it's a comment
+                if trimmed.starts_with('#') {
+                    host.lines.push(ConfigLine::Comment(trimmed.to_string()));
+                } else if let Some(captured) = key_regex.captures(trimmed) {
+                    let key = captured[1].to_string();
+                    let value = captured[2].to_string();
 
-                if let Some(host) = hosts.last_mut() {
+                    // Store in lines
+                    host.lines.push(ConfigLine::Option {
+                        key: key.clone(),
+                        value: value.clone(),
+                    });
+
+                    // Also parse for quick access
                     match key.as_str() {
                         "HostName" => host.hostname = Some(value),
                         "User" => host.user = Some(value),
@@ -88,9 +103,7 @@ fn split_by_host(content: &str) -> Vec<SshHost> {
                             }
                         }
                         "IdentityFile" => host.identity_file = Some(value),
-                        _ => {
-                            host.other_options.insert(key, value);
-                        }
+                        _ => {}
                     }
                 }
             }
@@ -145,22 +158,16 @@ fn input_ssh_config_to_add() -> SshConfigToAdd {
 fn ssh_host_to_config_string(host: &SshHost) -> String {
     let mut config = format!("Host {}\n", host.host);
 
-    if let Some(hostname) = &host.hostname {
-        config.push_str(&format!("    HostName {}\n", hostname));
-    }
-    if let Some(user) = &host.user {
-        config.push_str(&format!("    User {}\n", user));
-    }
-    if let Some(port) = host.port {
-        config.push_str(&format!("    Port {}\n", port));
-    }
-    if let Some(identity_file) = &host.identity_file {
-        config.push_str(&format!("    IdentityFile {}\n", identity_file));
-    }
-
-    // Add other options
-    for (key, value) in &host.other_options {
-        config.push_str(&format!("    {} {}\n", key, value));
+    // Output lines in order (preserves comments and order)
+    for line in &host.lines {
+        match line {
+            ConfigLine::Option { key, value } => {
+                config.push_str(&format!("    {} {}\n", key, value));
+            }
+            ConfigLine::Comment(comment) => {
+                config.push_str(&format!("    {}\n", comment));
+            }
+        }
     }
 
     config.push('\n');
@@ -174,6 +181,30 @@ fn create_ssh_config_string_to_add(
     user: &str,
     identity_file: &str,
 ) -> String {
+    let mut lines = Vec::new();
+
+    // Add config lines in standard order
+    lines.push(ConfigLine::Option {
+        key: "HostName".to_string(),
+        value: address.to_string(),
+    });
+    lines.push(ConfigLine::Option {
+        key: "Port".to_string(),
+        value: port.to_string(),
+    });
+    if !user.is_empty() {
+        lines.push(ConfigLine::Option {
+            key: "User".to_string(),
+            value: user.to_string(),
+        });
+    }
+    if !identity_file.is_empty() {
+        lines.push(ConfigLine::Option {
+            key: "IdentityFile".to_string(),
+            value: identity_file.to_string(),
+        });
+    }
+
     let host = SshHost {
         host: name.to_string(),
         hostname: Some(address.to_string()),
@@ -188,7 +219,7 @@ fn create_ssh_config_string_to_add(
         } else {
             None
         },
-        other_options: HashMap::new(),
+        lines,
     };
 
     ssh_host_to_config_string(&host)

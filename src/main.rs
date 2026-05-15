@@ -73,7 +73,7 @@ fn main() {
         }
         Commands::Connect { host } | Commands::Edit { host } | Commands::Remove { host } => {
             if hosts.is_empty() {
-                println!("No SSH hosts found");
+                eprintln!("No SSH hosts found");
                 return;
             }
 
@@ -107,7 +107,7 @@ fn main() {
                     Commands::Remove { .. } => {
                         let confirmed = Confirm::new()
                             .with_prompt(format!(
-                                "Are you sure you want to delete '{}'?",
+                                "Are you sure you want to remove '{}'?",
                                 selected_host
                             ))
                             .default(false)
@@ -127,9 +127,7 @@ fn main() {
                             println!("Cancelled");
                         }
                     }
-                    _ => {
-                        eprintln!("Invalid command");
-                    }
+                    _ => unreachable!("outer match already restricts to Connect/Edit/Remove"),
                 }
             }
         }

@@ -91,7 +91,7 @@ pub fn edit_ssh_host(
         for (i, host) in hosts.iter().enumerate() {
             if i != index_to_edit && &host.host == new_host_name {
                 eprintln!(
-                    "Error: Host name '{}' already exists. Edit cancelled.",
+                    "Error: Host alias '{}' already exists. Edit cancelled.",
                     new_host_name
                 );
                 fs::remove_file(&temp_file_path)?;

@@ -5,7 +5,7 @@ pub fn input_ssh_config_to_add(existing_hosts: &[SshHost]) -> SshConfigToAdd {
     // Loop until we get a non-duplicate name
     let name = loop {
         let input_name = Input::<String>::new()
-            .with_prompt("Enter host name")
+            .with_prompt("Host alias (used as `ssh <alias>`)")
             .interact_text()
             .unwrap();
 
@@ -14,7 +14,7 @@ pub fn input_ssh_config_to_add(existing_hosts: &[SshHost]) -> SshConfigToAdd {
 
         if is_duplicate {
             eprintln!(
-                "Error: Host '{}' already exists. Please enter a different name.",
+                "Error: Host alias '{}' already exists. Please enter a different name.",
                 input_name
             );
         } else {
@@ -23,21 +23,21 @@ pub fn input_ssh_config_to_add(existing_hosts: &[SshHost]) -> SshConfigToAdd {
     };
 
     let address = Input::<String>::new()
-        .with_prompt("Enter host address")
+        .with_prompt("HostName (IP or domain)")
         .interact_text()
         .unwrap();
     let port = Input::<u16>::new()
-        .with_prompt("Enter port")
+        .with_prompt("Port (default 22)")
         .default(22)
         .interact_text()
         .unwrap();
     let user = Input::<String>::new()
-        .with_prompt("Enter user")
+        .with_prompt("User (leave empty to use current user)")
         .allow_empty(true)
         .interact_text()
         .unwrap();
     let identity_file = Input::<String>::new()
-        .with_prompt("Enter identity file")
+        .with_prompt("IdentityFile path (e.g. ~/.ssh/id_rsa, optional)")
         .allow_empty(true)
         .interact_text()
         .unwrap();

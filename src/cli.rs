@@ -9,23 +9,23 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug, PartialEq)]
 pub enum Commands {
-    /// Add SSH host
+    /// Add a new SSH host entry to ~/.ssh/config
     Add,
-    /// List SSH hosts
+    /// List SSH host aliases from ~/.ssh/config
     Ls,
-    /// Connect to SSH host
+    /// Connect to an SSH host by alias
     #[command(visible_alias = "c")]
     #[command(visible_alias = "ssh")]
     Connect {
         #[arg(value_name = "HOST")]
         host: Option<String>,
     },
-    /// Edit SSH host
+    /// Edit an existing SSH host entry in $EDITOR
     Edit {
         #[arg(value_name = "HOST")]
         host: Option<String>,
     },
-    /// Remove SSH host
+    /// Remove an SSH host entry from ~/.ssh/config
     #[command(visible_alias = "rm")]
     Remove {
         #[arg(value_name = "HOST")]
